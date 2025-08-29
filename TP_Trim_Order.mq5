@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                             TP_Trim_Order_V1.mq5 |
+//|                                                   TP_Support.mq5 |
 //|                                                           minhnd |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
@@ -13,39 +13,44 @@
 CTrade trade;
 
 //--- Inputs
-input long PosTPInPip = 450;
-input long FirstPosTPIntervalInPip = 200;
+input long PosTPInPip = 420;
+input long FirstPosTPInPip = 250;
 input long ProtectThresholdInPip = 200;
+input bool SqueezeFlag = false;
+input long SqueezeThresholdInPip = 300;
+input bool InitPositionTest = false;
 
 //--- Global variables
-long FirstPosTPInPip = PosTPInPip - FirstPosTPIntervalInPip;
+//long FirstPosTPInPip = PosTPInPip - FirstPosTPIntervalInPip;
 double SymbolPoint = 0.01;
 bool IsTouchTP = false;
-double MovingTPThresholdInPrice = 0.5;
+double MovingTPThresholdInPrice = 0.2;
 long PosTicket = 0;
 double PosPrice = 0.0;
 double TPInPrice = 0.0;
-int Flag = 0;
+bool PrintFlag = true;
 
 int OnInit()
 {
-    Print("[EA] Start!!!");
+    Print("***[EA]*** Start!!!");
+    Print("PosTPInPip:", PosTPInPip, ", FirstPosTPInPip:", FirstPosTPInPip, ", ProtectThresholdInPip:", ProtectThresholdInPip, ", MovingTPThresholdInPrice:", MovingTPThresholdInPrice);
 
-    //double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-
-    //trade.Buy(1, _Symbol, price, 0, price + 10);
-
-    //trade.SellStop(1, price - 1.5, _Symbol, 0, 0);
-    //double sellOrderPrice = price - ProtectThresholdInPip * SymbolPoint;
-    //trade.SellStop(1, sellOrderPrice, _Symbol, 0, sellOrderPrice - 10);
+    if (InitPositionTest)
+    {
+        InitTestPosition();
+    }
 
     return (INIT_SUCCEEDED);
 }
 
 void OnTick()
 {
-    Squeeze();
-    // Trim positions
+    Squeeze(SqueezeFlag, SqueezeThresholdInPip);
+    Trim();
+}
+
+void Trim()
+{
     for (int i = 0; i < PositionsTotal(); i++)
     {
         ulong ticket = PositionGetTicket(i);
@@ -64,19 +69,11 @@ void OnTick()
                     {
                         TPInPrice = 0.0;
                         IsTouchTP = false;
-                        Flag = 0;
-                        Print("[EA] Target position changed to Buy: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits));
+                        PrintFlag = true;
+                        Print("***[EA]***----------------------------------------------------------------------------------------------");
+                        Print("***[EA]*** Target position changed to BUY: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits));
                     }
                     
-                    datetime now = TimeCurrent(); 
-                    MqlDateTime t;
-                    TimeToStruct(now, t);
-                    if(t.sec == 0)
-                    {
-                        Print("[EA] Target position ticket: ", PosTicket, ", buy: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits), " TPInPrice: ", TPInPrice, ", IsTouchTP: ", IsTouchTP, ", Flag: ", Flag);
-                    }
-                    
-                    // TP
                     if (TPInPrice == 0)
                     {
                         if (PositionsTotal() == 1)
@@ -87,22 +84,31 @@ void OnTick()
                         {
                             TPInPrice = NormalizeDouble(PosPrice + PosTPInPip * SymbolPoint, _Digits);
                         }
-                        Print("[EA] Init TPInPrice: ", TPInPrice);
+                        Print("***[EA]*** Init TPInPrice: ", TPInPrice);
                     }
+                    
+                    datetime now = TimeCurrent(); 
+                    MqlDateTime t;
+                    TimeToStruct(now, t);
+                    if(t.sec == 0)
+                    {
+                        Print("***[EA]*** Target position ticket: ", PosTicket, ", BUY: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits), " TPInPrice: ", TPInPrice, ", IsTouchTP: ", IsTouchTP, ", PrintFlag: ", PrintFlag);
+                    }
+                    
                     double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
                     if (currentPrice > TPInPrice)
                     {
                         IsTouchTP = true;
-                        if (Flag == 0)
+                        if (PrintFlag)
                         {
-                            Print("[EA] Position ticket: ", PosTicket, ", buy: ", posVolume, " lots touch TP: ", TPInPrice);
-                            Flag++;
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", BUY: ", posVolume, " lots touch TP: ", TPInPrice);
+                            PrintFlag = false;
                         }
 
                         if (currentPrice > TPInPrice)
                         {
                             TPInPrice = currentPrice;
-                            Print("[EA] Position ticket: ", PosTicket, ", buy: ", posVolume, " lots TPInPrice move to: ", TPInPrice);
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", BUY: ", posVolume, " lots TPInPrice move to: ", TPInPrice);
                         }
                     }
                     if (IsTouchTP && currentPrice < TPInPrice - MovingTPThresholdInPrice)
@@ -110,10 +116,10 @@ void OnTick()
                         if (PositionsTotal() == 1)
                         {
                             trade.PositionClose(PosTicket);
-                            Print("[EA] Position ticket: ", PosTicket, ", buy: ", posVolume, " lots TP at: ", currentPrice);
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", BUY: ", posVolume, " lots TP at: ", currentPrice);
                             TPInPrice = 0.0;
                             IsTouchTP = false;
-                            Flag = 0;
+                            PrintFlag = true;
                             CloseAllOrders();
                         }
                         else if (PositionsTotal() > 1)
@@ -121,10 +127,10 @@ void OnTick()
                             double TPUSD = PositionGetDouble(POSITION_PROFIT);
                             double PositionVolume = PositionGetDouble(POSITION_VOLUME);
                             trade.PositionClose(PosTicket);
-                            Print("[EA] Position ticket: ", PosTicket, ", buy: ", posVolume, " lots TP at: ", currentPrice, ", USD: ", TPUSD);
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", BUY: ", posVolume, " lots TP at: ", currentPrice, ", USD: ", TPUSD);
                             TPInPrice = 0.0;
                             IsTouchTP = false;
-                            Flag = 0;
+                            PrintFlag = true;
                             
                             ulong trimPosTicket = 0;
                             double minPosPrice = 0.0;
@@ -158,14 +164,14 @@ void OnTick()
                                     double RemainVolume = NormalizeDouble((RemainLostUSD / TotalLostUSD * TrimPositionVolume), 2);
                                     double CloseVolumn = TrimPositionVolume - RemainVolume;
                                     trade.PositionClosePartial(trimPosTicket, CloseVolumn);
-                                    Print("[EA] Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
-                                    Print("[EA] Position ticket: ", trimPosTicket, ", sell: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
+                                    Print("***[EA]*** Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
+                                    Print("***[EA]*** Position ticket: ", trimPosTicket, ", SELL: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
                                 }
                                 else
                                 {
                                     trade.PositionClose(trimPosTicket);
-                                    Print("[EA] Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
-                                    Print("[EA] Position ticket: ", trimPosTicket, ", sell: ", TrimPositionVolume, " lots closed at price: ", currentPrice);
+                                    Print("***[EA]*** Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
+                                    Print("***[EA]*** Position ticket: ", trimPosTicket, ", SELL: ", TrimPositionVolume, " lots closed at price: ", currentPrice);
 
                                     ApplyUSD = ApplyUSD - TotalLostUSD;
 
@@ -197,8 +203,8 @@ void OnTick()
                                         double RemainVolume = NormalizeDouble((RemainLostUSD / TotalLostUSD * TrimPositionVolume), 2);
                                         double CloseVolumn = TrimPositionVolume - RemainVolume;
                                         trade.PositionClosePartial(trimPosTicket, CloseVolumn);
-                                        Print("[EA] Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
-                                        Print("[EA] Position ticket: ", trimPosTicket, ", sell: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
+                                        Print("***[EA]*** Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
+                                        Print("***[EA]*** Position ticket: ", trimPosTicket, ", SELL: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
                                     }
                                 }
 
@@ -209,7 +215,7 @@ void OnTick()
                                     double buyOrderPrice = NormalizeDouble(currentPrice + ProtectThresholdInPip * SymbolPoint, _Digits);
                                     if (trade.BuyStop(diffVolume, buyOrderPrice, _Symbol, 0, 4000))
                                     {
-                                        Print("[EA] Place Buy order ", diffVolume, " lot tại ", buyOrderPrice);
+                                        Print("***[EA]*** Place BUY STOP order ", diffVolume, " at ", buyOrderPrice);
                                     }
                                 }
                             }
@@ -222,19 +228,11 @@ void OnTick()
                     {
                         TPInPrice = 0.0;
                         IsTouchTP = false;
-                        Flag = 0;
-                        Print("[EA] Target position changed to Sell: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits));
+                        PrintFlag = true;
+                        Print("***[EA]***----------------------------------------------------------------------------------------------");
+                        Print("***[EA]*** Target position changed to SELL: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits));
                     }
                     
-                    datetime now = TimeCurrent(); 
-                    MqlDateTime t;
-                    TimeToStruct(now, t);
-                    if(t.sec == 0)
-                    {
-                        Print("[EA] Target position ticket: ", PosTicket, ", sell: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits), ", TPInPrice: ", TPInPrice, ", IsTouchTP: ", IsTouchTP, ", Flag: ", Flag);
-                    }
-                    
-                    // TP
                     if (TPInPrice == 0)
                     {
                         if (PositionsTotal() == 1)
@@ -245,23 +243,31 @@ void OnTick()
                         {
                             TPInPrice = NormalizeDouble(PosPrice - PosTPInPip * SymbolPoint, _Digits);
                         }
-                        Print("[EA] Init TPInPrice: ", TPInPrice);
+                        Print("***[EA]*** Init TPInPrice: ", TPInPrice);
+                    }
+                    
+                    datetime now = TimeCurrent(); 
+                    MqlDateTime t;
+                    TimeToStruct(now, t);
+                    if(t.sec == 0)
+                    {
+                        Print("***[EA]*** Target position ticket: ", PosTicket, ", SELL: ", posVolume, " at price: ", NormalizeDouble(PosPrice, _Digits), ", TPInPrice: ", TPInPrice, ", IsTouchTP: ", IsTouchTP, ", PrintFlag: ", PrintFlag);
                     }
                     
                     double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
                     if (currentPrice < TPInPrice)
                     {
                         IsTouchTP = true;
-                        if (Flag == 0)
+                        if (PrintFlag)
                         {
-                            Print("[EA] Position ticket: ", PosTicket, ", sell: ", posVolume, " lots touch TP: ", TPInPrice);
-                            Flag++;
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", SELL: ", posVolume, " lots touch TP: ", TPInPrice);
+                            PrintFlag = false;
                         }
 
                         if (currentPrice < TPInPrice)
                         {
                             TPInPrice = currentPrice;
-                            Print("[EA] Position ticket: ", PosTicket, ", sell: ", posVolume, " lots TPInPrice move to: ", TPInPrice);
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", SELL: ", posVolume, " lots TPInPrice move to: ", TPInPrice);
                         }
                     }
                     if (IsTouchTP && currentPrice > TPInPrice + MovingTPThresholdInPrice)
@@ -269,10 +275,10 @@ void OnTick()
                         if (PositionsTotal() == 1)
                         {
                             trade.PositionClose(PosTicket);
-                            Print("[EA] Position ticket: ", PosTicket, ", sell: ", posVolume, " lots TP at: ", currentPrice);
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", SELL: ", posVolume, " lots TP at: ", currentPrice);
                             TPInPrice = 0.0;
                             IsTouchTP = false;
-                            Flag = 0;
+                            PrintFlag = true;
                             CloseAllOrders();
                         }
                         else if (PositionsTotal() > 1)
@@ -280,10 +286,10 @@ void OnTick()
                             double TPUSD = PositionGetDouble(POSITION_PROFIT);
                             double PositionVolume = PositionGetDouble(POSITION_VOLUME);
                             trade.PositionClose(PosTicket);
-                            Print("[EA] Position ticket: ", PosTicket, ", sell: ", posVolume, " lots TP at: ", currentPrice, ", USD: ", TPUSD);
+                            Print("***[EA]*** Position ticket: ", PosTicket, ", SELL: ", posVolume, " lots TP at: ", currentPrice, ", USD: ", TPUSD);
                             TPInPrice = 0.0;
                             IsTouchTP = false;
-                            Flag = 0;
+                            PrintFlag = true;
 
 
                             ulong trimPosTicket = 0;
@@ -318,14 +324,14 @@ void OnTick()
                                     double RemainVolume = NormalizeDouble((RemainLostUSD / TotalLostUSD * TrimPositionVolume), 2);
                                     double CloseVolumn = TrimPositionVolume - RemainVolume;
                                     trade.PositionClosePartial(trimPosTicket, CloseVolumn);
-                                    Print("[EA] Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
-                                    Print("[EA] Position ticket: ", trimPosTicket, ", buy: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
+                                    Print("***[EA]*** Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
+                                    Print("***[EA]*** Position ticket: ", trimPosTicket, ", BUY: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
                                 }
                                 else
                                 {
                                     trade.PositionClose(trimPosTicket);
-                                    Print("[EA] Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
-                                    Print("[EA] Position ticket: ", trimPosTicket, ", buy: ", TrimPositionVolume, " lots closed at price: ", currentPrice);
+                                    Print("***[EA]*** Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
+                                    Print("***[EA]*** Position ticket: ", trimPosTicket, ", BUY: ", TrimPositionVolume, " lots closed at price: ", currentPrice);
 
                                     ApplyUSD = ApplyUSD - TotalLostUSD;
 
@@ -357,8 +363,8 @@ void OnTick()
                                         double RemainVolume = NormalizeDouble((RemainLostUSD / TotalLostUSD * TrimPositionVolume), 2);
                                         double CloseVolumn = TrimPositionVolume - RemainVolume;
                                         trade.PositionClosePartial(trimPosTicket, CloseVolumn);
-                                        Print("[EA] Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
-                                        Print("[EA] Position ticket: ", trimPosTicket, ", buy: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
+                                        Print("***[EA]*** Lost USD: ", TotalLostUSD, ", Apply USD: ", ApplyUSD, ", Remain USD: ", RemainLostUSD);
+                                        Print("***[EA]*** Position ticket: ", trimPosTicket, ", BUY: ", TrimPositionVolume, " lots closed: ", CloseVolumn, " at price: ", currentPrice);
                                     }
                                 }
                                 
@@ -369,7 +375,7 @@ void OnTick()
                                     double sellOrderPrice = NormalizeDouble(currentPrice - ProtectThresholdInPip * SymbolPoint, _Digits);
                                     if (trade.SellStop(diffVolume, sellOrderPrice, _Symbol, 0, 2000))
                                     {
-                                        Print("[EA] Place Sell order ", diffVolume, " lot tại ", sellOrderPrice);
+                                        Print("***[EA]*** Place SELL STOP order ", diffVolume, " at ", sellOrderPrice);
                                     }
                                 }
                             }
@@ -381,51 +387,37 @@ void OnTick()
         }
     }
 }
-//+------------------------------------------------------------------+
-void CloseAllOrders()
-{
-    for (int i = OrdersTotal() - 1; i >= 0; i--)
-    {
-        ulong orderTicket = OrderGetTicket(i);
-        if (OrderSelect(orderTicket))
-        {
-            trade.OrderDelete(orderTicket);
-            Print("[EA] Đóng Order: ", orderTicket);
-        }
-    }
-}
 
-//+------------------------------------------------------------------+
-void Squeeze()
+void Squeeze(bool isEnable, long squeezeThresholdInPip)
 {
-    if (OrdersTotal() == 1)
+    if (isEnable && OrdersTotal() == 1)
     {
         double currentPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         ulong orderTicket = OrderGetTicket(0);
         if (OrderSelect(orderTicket))
         {
             double orderPrice = OrderGetDouble(ORDER_PRICE_OPEN);
-            if (MathAbs(currentPrice - orderPrice) > ProtectThresholdInPip * SymbolPoint)
+            if (MathAbs(currentPrice - orderPrice) > squeezeThresholdInPip * SymbolPoint)
             {
                 ENUM_ORDER_TYPE orderType = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
                 if (orderType == ORDER_TYPE_BUY_STOP)
                 {
                     double maxSellPositionPrice = GetMinMaxPositionPriceByType(POSITION_TYPE_SELL);
-                    double newOrderPrice = NormalizeDouble(currentPrice + ProtectThresholdInPip * SymbolPoint, _Digits);
-                    if (newOrderPrice >= maxSellPositionPrice + ProtectThresholdInPip * SymbolPoint)
+                    double newOrderPrice = NormalizeDouble(currentPrice + squeezeThresholdInPip * SymbolPoint, _Digits);
+                    if (newOrderPrice >= maxSellPositionPrice + squeezeThresholdInPip * SymbolPoint)
                     {
                         trade.OrderModify(orderTicket, newOrderPrice, 0, newOrderPrice + 10, ORDER_TIME_GTC, 0);
-                        Print("[EA] Modify buy order from: ", orderPrice, " to: ", newOrderPrice);
+                        Print("***[EA]*** Modify buy order from: ", orderPrice, " to: ", newOrderPrice);
                     }
                 }
                 else if (orderType == ORDER_TYPE_SELL_STOP)
                 {
                     double minBuyPositionPrice = GetMinMaxPositionPriceByType(POSITION_TYPE_BUY);
-                    double newOrderPrice = NormalizeDouble(currentPrice - ProtectThresholdInPip * SymbolPoint, _Digits);
-                    if (newOrderPrice <= minBuyPositionPrice - ProtectThresholdInPip * SymbolPoint)
+                    double newOrderPrice = NormalizeDouble(currentPrice - squeezeThresholdInPip * SymbolPoint, _Digits);
+                    if (newOrderPrice <= minBuyPositionPrice - squeezeThresholdInPip * SymbolPoint)
                     {
                         trade.OrderModify(orderTicket, newOrderPrice, 0, newOrderPrice - 10, ORDER_TIME_GTC, 0);
-                        Print("[EA] Modify sell order from: ", orderPrice, " to: ", newOrderPrice);
+                        Print("***[EA]*** Modify sell order from: ", orderPrice, " to: ", newOrderPrice);
                     }
                 }
             }
@@ -433,7 +425,14 @@ void Squeeze()
     }
 }
 
-//+------------------------------------------------------------------+
+void InitTestPosition()
+{
+    double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    trade.Buy(1, _Symbol, price, 0, price + 10);
+    double sellOrderPrice = price - ProtectThresholdInPip * SymbolPoint;
+    trade.SellStop(1, sellOrderPrice, _Symbol, 0, sellOrderPrice - 10);
+}
+
 double GetMinMaxPositionPriceByType(ENUM_POSITION_TYPE type)
 {
     double price = 0.0;
@@ -461,7 +460,19 @@ double GetMinMaxPositionPriceByType(ENUM_POSITION_TYPE type)
     return price;
 }
 
-//+------------------------------------------------------------------+
+void CloseAllOrders()
+{
+    for (int i = OrdersTotal() - 1; i >= 0; i--)
+    {
+        ulong orderTicket = OrderGetTicket(i);
+        if (OrderSelect(orderTicket))
+        {
+            trade.OrderDelete(orderTicket);
+            Print("***[EA]*** Đóng Order: ", orderTicket);
+        }
+    }
+}
+
 double GetDifferenceVolumeBuyAndSell()
 {
     double buyVolume = 0.0;
@@ -489,21 +500,20 @@ double GetDifferenceVolumeBuyAndSell()
     return MathAbs(buyVolume - sellVolume);
 }
 
-//+------------------------------------------------------------------+
 void PlaceNewOrder(ENUM_ORDER_TYPE orderType, double volume, double price, string symbol)
 {
     if (orderType == ORDER_TYPE_BUY_STOP)
     {
-        if (trade.BuyStop(volume, price, symbol, 0, 4000))
+        if (trade.BuyStop(volume, price, symbol, 0, price + 10))
         {
-            Print("[EA] Buy stop order placed: ", volume, " lots at price: ", price);
+            Print("***[EA]*** Buy stop order placed: ", volume, " lots at price: ", price);
         }
     }
     else if (orderType == ORDER_TYPE_SELL_STOP)
     {
-        if (trade.SellStop(volume, price, symbol, 0, 2000))
+        if (trade.SellStop(volume, price, symbol, 0, price - 10))
         {
-            Print("[EA] Sell stop order placed: ", volume, " lots at price: ", price);
+            Print("***[EA]*** Sell stop order placed: ", volume, " lots at price: ", price);
         }
     }
     
