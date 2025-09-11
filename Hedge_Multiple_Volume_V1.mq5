@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                     Hedge_Multiple_Volume_V1.mq5 |
+//|                                        Hedge_Multiple_Volume.mq5 |
 //|                                                           minhnd |
 //|                                             https://www.mql5.com |
 //+------------------------------------------------------------------+
@@ -16,6 +16,11 @@ CTrade trade;
 input int Type = 0;
 input long TPInPip = 200;
 input long HedgeInPip = 100;
+input double InitialVolume = 0.01;
+
+input bool CheckTime = true;
+input bool CheckVolume = true;
+input long CandleVolume = 2000;
 
 //--- Global variables
 double SymbolPoint = 0.01;
@@ -23,15 +28,10 @@ double BuyPrice = 0.0;
 double SellPrice = 0.0;
 double TPBuyPrice = 0.0;
 double TPSellPrice = 0.0;
-double Volume = 0.0;
-double TrimVolume = 0.45;
-bool Pause = false;
-double InitialVolume = 0.01;
 double MaxVolume = 1.28;
-int MaxPositions = 8;
-double FullPosProtectPrice = 0.0;
-bool IsTouchFullPosProtect = false;
-double FullPosProtectThreshold = 0.2;
+int MaxSL = 120;
+double VolumeArray[] = { InitialVolume, 2*InitialVolume, 4*InitialVolume, 8*InitialVolume, 16*InitialVolume, 32*InitialVolume, 64*InitialVolume, 128*InitialVolume };
+
 
 int OnInit()
 {
@@ -43,40 +43,39 @@ void OnTick()
 {
     if (PositionsTotal() == 0 && OrdersTotal() == 0)
     {
-        IsTouchFullPosProtect = false;
-        if (IsTimeToCheck() && IsM5VolumePass(2000)) {
+        if (CheckCondition()) {
             Print("***[EA]*** New Cycle ---------------------------------------------------");
             Init();
         }
     }
 
-    if (PositionsTotal() > 0 && OrdersTotal() == 0 && Volume < MaxVolume)
+    if (PositionsTotal() > 0 && OrdersTotal() == 0 && GetMaxVolumePosition() < MaxVolume)
     {
-        Volume = Volume * 2;
+        double volume = VolumeArray[PositionsTotal()];
         if (Type == 0)
         {
             if (PositionsTotal() % 2 == 0)
             {
-                trade.BuyStop(Volume, BuyPrice, _Symbol, TPSellPrice, TPBuyPrice);
-                Print("***[EA]*** Place BUY Order, volume: ", Volume);
+                trade.BuyStop(volume, BuyPrice, _Symbol, TPSellPrice, TPBuyPrice);
+                Print("***[EA]*** Place BUY Order, volume: ", volume);
             }
             else
             {
-                trade.SellStop(Volume, SellPrice, _Symbol, TPBuyPrice, TPSellPrice);
-                Print("***[EA]*** Place SELL Order, volume: ", Volume);
+                trade.SellStop(volume, SellPrice, _Symbol, TPBuyPrice, TPSellPrice);
+                Print("***[EA]*** Place SELL Order, volume: ", volume);
             }
         }
         else if (Type == 1)
         {
             if (PositionsTotal() % 2 == 0)
             {
-                trade.SellStop(Volume, SellPrice, _Symbol, TPBuyPrice, TPSellPrice);
-                Print("***[EA]*** Place SELL Order, volume: ", Volume);
+                trade.SellStop(volume, SellPrice, _Symbol, TPBuyPrice, TPSellPrice);
+                Print("***[EA]*** Place SELL Order, volume: ", volume);
             }
             else
             {
-                trade.BuyStop(Volume, BuyPrice, _Symbol, TPSellPrice, TPBuyPrice);
-                Print("***[EA]*** Place BUY Order, volume: ", Volume);
+                trade.BuyStop(volume, BuyPrice, _Symbol, TPSellPrice, TPBuyPrice);
+                Print("***[EA]*** Place BUY Order, volume: ", volume);
             }
         }
         return;
@@ -95,13 +94,13 @@ void OnTick()
         }
     }
 
-    if (Volume == MaxVolume)
+    if (GetMaxVolumePosition() == MaxVolume)
     {
-        if (GetTotalProfit() <= -120)
+        if (GetTotalProfit() <= -MaxSL)
         {
             CloseAllPositions();
             CloseAllOrders();
-            Print("***[EA]*** Loss = 120$, SL !!!");
+            Print("***[EA]*** SL, Loss 120$ !!!");
             return;
         }
     }
@@ -109,26 +108,23 @@ void OnTick()
 
 void Init()
 {
-    Volume = InitialVolume;
     if (Type == 0)
     {
         BuyPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         SellPrice = NormalizeDouble(BuyPrice - HedgeInPip * SymbolPoint, _Digits);
-        TPBuyPrice = NormalizeDouble(BuyPrice + TPInPip * SymbolPoint, _Digits);
+        TPBuyPrice = NormalizeDouble(BuyPrice + (TPInPip + 20) * SymbolPoint, _Digits);
         TPSellPrice = NormalizeDouble(SellPrice - TPInPip * SymbolPoint, _Digits);
-        trade.Buy(Volume, _Symbol, BuyPrice, TPSellPrice, TPBuyPrice);
-        Print("***[EA]*** Place BUY Position, volume: ", Volume);
-        FullPosProtectPrice = SellPrice;
+        trade.Buy(InitialVolume, _Symbol, BuyPrice, TPSellPrice, TPBuyPrice);
+        Print("***[EA]*** Place BUY Position, volume: ", InitialVolume);
     }
     else if (Type == 1)
     {
         SellPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         BuyPrice = NormalizeDouble(SellPrice + HedgeInPip * SymbolPoint, _Digits);
-        TPBuyPrice = NormalizeDouble(BuyPrice + TPInPip * SymbolPoint, _Digits);
+        TPBuyPrice = NormalizeDouble(BuyPrice + (TPInPip + 20) * SymbolPoint, _Digits);
         TPSellPrice = NormalizeDouble(SellPrice - TPInPip * SymbolPoint, _Digits);
-        trade.Sell(Volume, _Symbol, SellPrice, TPBuyPrice, TPSellPrice);
-        Print("***[EA]*** Place SELL Position, volume: ", Volume);
-        FullPosProtectPrice = BuyPrice;
+        trade.Sell(InitialVolume, _Symbol, SellPrice, TPBuyPrice, TPSellPrice);
+        Print("***[EA]*** Place SELL Position, volume: ", InitialVolume);
     }
 }
 
@@ -139,6 +135,23 @@ bool IsTakeProfit()
     if (currentAskPrice > TPBuyPrice || currentBidPrice < TPSellPrice)
         return true;
     return false;
+}
+
+bool CheckCondition()
+{
+    bool passTimeCheck = true;
+    bool passVolumnCheck = true;
+    if (CheckTime)
+    {
+        passTimeCheck = CheckTimeFunc();
+    }
+
+    if (passTimeCheck && CheckVolume)
+    {
+        passVolumnCheck = CheckVolumeFunc(CandleVolume);
+    }
+
+    return (passTimeCheck && passVolumnCheck);
 }
 
 int CountPositionByType(ENUM_POSITION_TYPE type)   
@@ -202,26 +215,6 @@ double GetMaxVolumePosition()
     return maxVolume;
 }
 
-bool CheckStartHedge()
-{
-    bool isHedge = true;
-    for (int i = 0; i < PositionsTotal(); i++)
-    {
-        ulong ticket = PositionGetTicket(i);
-        if (PositionSelectByTicket(ticket))
-        {
-            double posVolume = PositionGetDouble(POSITION_VOLUME);
-            double intervalVolume = MaxVolume - TrimVolume;
-            if (NormalizeDouble(posVolume, 2) != NormalizeDouble(intervalVolume, 2))
-            {
-                isHedge = false;
-                break;
-            }
-        }
-    }
-    return isHedge;
-}
-
 double GetTotalProfit()
 {
     double totalProfit = 0.0;
@@ -240,25 +233,12 @@ double GetTotalProfit()
     return totalProfit;
 }
 
-bool IsCurrentM5CandleInRange()
-{
-    return true;
-   //datetime candleTime = iTime(_Symbol, PERIOD_M5, 0);
-   //MqlDateTime tm;
-   //TimeToStruct(candleTime, tm); 
-   //int hour = tm.hour; 
-
-   //if((hour >= 7 && hour < 9) || (hour >= 14 && hour < 16) || (hour >= 19 && hour < 21))
-      //return true;
-   //return false;
-}
-
 long GetM5Volume(int shift=0)
 {
    return iVolume(_Symbol, PERIOD_M5, shift);
 }
 
-bool IsTimeToCheck()
+bool CheckTimeFunc()
 {
    datetime now = TimeCurrent();
    MqlDateTime tm;
@@ -267,12 +247,12 @@ bool IsTimeToCheck()
    int min = tm.min;  
    int sec = tm.sec;                     
 
-   if((min % 5 == 0 || min % 6 == 0 || min % 7 == 0) && sec < 30)
+   if(min % 5 == 0 || min % 6 == 0 || min % 7 == 0)
       return true;
    return false;
 }
 
-bool IsM5VolumePass(long volumne)
+bool CheckVolumeFunc(long volumne)
 {
     long previousM5Volume = GetM5Volume(1);
     if (previousM5Volume > volumne)
