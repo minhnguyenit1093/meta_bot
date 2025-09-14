@@ -17,20 +17,22 @@ input int Type = 0;
 input long TPInPip = 200;
 input long HedgeInPip = 100;
 input double InitialVolume = 0.01;
+input double MaxVolume = 1.28;
+input int MaxSL = 120;
+input double SymbolPoint = 0.01;
+input double SpreadInPip = 20;
+input long CandleVolume = 2000;
 
 input bool CheckTime = true;
 input bool CheckVolume = true;
-input long CandleVolume = 2000;
 
 //--- Global variables
-double SymbolPoint = 0.01;
 double BuyPrice = 0.0;
 double SellPrice = 0.0;
 double TPBuyPrice = 0.0;
 double TPSellPrice = 0.0;
-double MaxVolume = 1.28;
-int MaxSL = 120;
 double VolumeArray[] = { InitialVolume, 2*InitialVolume, 4*InitialVolume, 8*InitialVolume, 16*InitialVolume, 32*InitialVolume, 64*InitialVolume, 128*InitialVolume };
+bool PrintMaxVol = true;
 
 
 int OnInit()
@@ -96,6 +98,11 @@ void OnTick()
 
     if (GetMaxVolumePosition() == MaxVolume)
     {
+        if (PrintMaxVol)
+        {
+            Print("***[EA]*** Position Max volume!!!");
+            PrintMaxVol = false;
+        }
         if (GetTotalProfit() <= -MaxSL)
         {
             CloseAllPositions();
@@ -108,11 +115,12 @@ void OnTick()
 
 void Init()
 {
+    PrintMaxVol = true;
     if (Type == 0)
     {
         BuyPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         SellPrice = NormalizeDouble(BuyPrice - HedgeInPip * SymbolPoint, _Digits);
-        TPBuyPrice = NormalizeDouble(BuyPrice + (TPInPip + 20) * SymbolPoint, _Digits);
+        TPBuyPrice = NormalizeDouble(BuyPrice + (TPInPip + SpreadInPip) * SymbolPoint, _Digits);
         TPSellPrice = NormalizeDouble(SellPrice - TPInPip * SymbolPoint, _Digits);
         trade.Buy(InitialVolume, _Symbol, BuyPrice, TPSellPrice, TPBuyPrice);
         Print("***[EA]*** Place BUY Position, volume: ", InitialVolume);
@@ -121,7 +129,7 @@ void Init()
     {
         SellPrice = SymbolInfoDouble(_Symbol, SYMBOL_BID);
         BuyPrice = NormalizeDouble(SellPrice + HedgeInPip * SymbolPoint, _Digits);
-        TPBuyPrice = NormalizeDouble(BuyPrice + (TPInPip + 20) * SymbolPoint, _Digits);
+        TPBuyPrice = NormalizeDouble(BuyPrice + (TPInPip + SpreadInPip) * SymbolPoint, _Digits);
         TPSellPrice = NormalizeDouble(SellPrice - TPInPip * SymbolPoint, _Digits);
         trade.Sell(InitialVolume, _Symbol, SellPrice, TPBuyPrice, TPSellPrice);
         Print("***[EA]*** Place SELL Position, volume: ", InitialVolume);
@@ -135,23 +143,6 @@ bool IsTakeProfit()
     if (currentAskPrice > TPBuyPrice || currentBidPrice < TPSellPrice)
         return true;
     return false;
-}
-
-bool CheckCondition()
-{
-    bool passTimeCheck = true;
-    bool passVolumnCheck = true;
-    if (CheckTime)
-    {
-        passTimeCheck = CheckTimeFunc();
-    }
-
-    if (passTimeCheck && CheckVolume)
-    {
-        passVolumnCheck = CheckVolumeFunc(CandleVolume);
-    }
-
-    return (passTimeCheck && passVolumnCheck);
 }
 
 int CountPositionByType(ENUM_POSITION_TYPE type)   
@@ -238,6 +229,27 @@ long GetM5Volume(int shift=0)
    return iVolume(_Symbol, PERIOD_M5, shift);
 }
 
+bool CheckCondition()
+{
+    bool passTimeCheck = true;
+    bool passVolumnCheck = true;
+    
+    if (IsM5VolumeOver(CandleVolume))
+        return true;
+    
+    //if (CheckTime)
+    //{
+        //passTimeCheck = IsM5InFirst3Minutes();
+    //}
+
+    if (CheckVolume)
+    {
+        passVolumnCheck = CheckVolumeFunc(CandleVolume);
+    }
+
+    return (passTimeCheck && passVolumnCheck);
+}
+
 bool CheckTimeFunc()
 {
    datetime now = TimeCurrent();
@@ -246,10 +258,11 @@ bool CheckTimeFunc()
    int hour = tm.hour;   
    int min = tm.min;  
    int sec = tm.sec;                     
-
-   if(min % 5 == 0 || min % 6 == 0 || min % 7 == 0)
-      return true;
-   return false;
+   
+   if(hour == 22)
+      return false;
+      
+   return true;
 }
 
 bool CheckVolumeFunc(long volumne)
@@ -266,4 +279,23 @@ bool CheckVolumeFunc(long volumne)
        return true;
     }
     return false;
+}
+
+bool IsM5VolumeOver(long volThres)
+{
+   long vol = iVolume(NULL, PERIOD_M5, 0);
+          
+   if (vol > volThres)
+      return true;
+   return false;
+}
+
+bool IsM5InFirst3Minutes()
+{
+   datetime open_time = iTime(_Symbol, PERIOD_M5, 0); 
+   int passed = (int)(TimeCurrent() - open_time);
+
+   if(0 * 60 < passed && passed < 3 * 60)
+      return true;
+   return false;
 }
