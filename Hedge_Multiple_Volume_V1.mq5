@@ -6,9 +6,7 @@
 #property copyright "minhnd"
 #property link "https://www.mql5.com"
 #property version "1.00"
-//+------------------------------------------------------------------+
-//| Expert initialization function                                   |
-//+------------------------------------------------------------------+
+
 #include <Trade/Trade.mqh>
 CTrade trade;
 
@@ -237,10 +235,10 @@ bool CheckCondition()
     if (IsM5VolumeOver(CandleVolume))
         return true;
     
-    //if (CheckTime)
-    //{
-        //passTimeCheck = IsM5InFirst3Minutes();
-    //}
+    if (CheckTime)
+    {
+        passTimeCheck = CheckTimeFunc();
+    }
 
     if (CheckVolume)
     {
@@ -259,10 +257,10 @@ bool CheckTimeFunc()
    int min = tm.min;  
    int sec = tm.sec;                     
    
-   if(hour == 22)
-      return false;
+   if(min % 5 == 0 || min % 6 == 0 || min % 7 == 0)
+      return true;
       
-   return true;
+   return false;
 }
 
 bool CheckVolumeFunc(long volumne)
